@@ -4,7 +4,7 @@
 #include <QMainWindow>
 #include <QSlider>
 #include <QVBoxLayout>
-#include "spiralprogressindicator.h"
+#include "spiralprogressindicator.h" // Убедитесь, что имя файла совпадает
 
 class MainWindow : public QMainWindow
 {
@@ -19,4 +19,5 @@ private:
     QSlider *slider;
 };
 
-#endif // MAINWINDOW_WINDOW_H
+// Исправляем комментарий в #endif
+#endif // MAINWINDOW_H
