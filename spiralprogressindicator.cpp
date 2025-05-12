@@ -20,10 +20,15 @@ SpiralProgressIndicator::SpiralProgressIndicator(QWidget *parent)
     m_animationTimer.start(16); // ~60 FPS
 }
 
+// *** MISSING DESTRUCTOR DEFINITION ADDED HERE ***
 SpiralProgressIndicator::~SpiralProgressIndicator()
 {
-    // Деструктор
+    // Деструктор: очистка ресурсов, если необходимо.
+    // В данном случае QTimer и QPropertyAnimation (если бы использовался)
+    // имеют родителя (this) и будут удалены автоматически.
 }
+// *** END OF ADDED DESTRUCTOR DEFINITION ***
+
 
 void SpiralProgressIndicator::setProgressValue(int value)
 {
