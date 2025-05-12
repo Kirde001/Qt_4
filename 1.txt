@@ -1,5 +1,3 @@
-/home/user/laba4/mainwindow.cpp:30: ошибка: ‘setProgressValue’ is not a member of ‘SpiralProgressIndicator’
-/home/user/laba4/mainwindow.cpp: In constructor ‘MainWindow::MainWindow(QWidget*)’:
-/home/user/laba4/mainwindow.cpp:30:90: error: ‘setProgressValue’ is not a member of ‘SpiralProgressIndicator’
-   30 |     connect(slider, &QSlider::valueChanged, progressIndicator, &SpiralProgressIndicator::setProgressValue);
-      |                                                                                          ^~~~~~~~~~~~~~~~
+1 - менять фигуру на любую на сердечко
+2 - изменение мышкой
+3 - поле ввода
