@@ -1,10 +1,10 @@
-#ifndef MAINWINDOW_H
+#ifndef MAINWINDOW_H // Исправлен инклуд-гард
 #define MAINWINDOW_H
 
 #include <QMainWindow>
 #include <QSlider>
 #include <QVBoxLayout>
-#include "spiralprogressindicator.h" // Убедитесь, что имя файла совпадает
+#include "spiralprogressindicator.h"
 
 class MainWindow : public QMainWindow
 {
@@ -19,5 +19,4 @@ private:
     QSlider *slider;
 };
 
-// Исправляем комментарий в #endif
-#endif // MAINWINDOW_H
+#endif // MAINWINDOW_H // Исправлен инклуд-гард
