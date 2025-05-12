@@ -2,36 +2,4 @@
 2 - изменение мышкой
 3 - поле ввода
 
-#ifndef PROGRESSINDICATOR_H
-#define PROGRESSINDICATOR_H
-
-#include <QWidget>
-#include <QPainter>
-#include <QWheelEvent>
-
-class ProgressIndicator : public QWidget
-{
-    Q_OBJECT
-
-public:
-    explicit ProgressIndicator(QWidget *parent = nullptr);
-
-    void setProgressValue(int value);
-    int progressValue() const;
-
-    void setMaximumValue(int value);
-    int maximumValue() const;
-
-    void setMinimumValue(int value);
-    int minimumValue() const;
-
-protected:
-    void paintEvent(QPaintEvent *event) override;
-    void wheelEvent(QWheelEvent *event) override;
-
-private:
-    int m_progressValue;
-    int m_maximumValue;
-    int m_minimumValue;
-};
-#endif // PROGRESSINDICATOR_H
+:-1: ошибка: CMakeFiles/laba4.dir/laba4_autogen/mocs_compilation.cpp.o:(.data.rel.ro._ZTV23SpiralProgressIndicator[_ZTV23SpiralProgressIndicator]+0x28): undefined reference to `SpiralProgressIndicator::~SpiralProgressIndicator()'
