@@ -2,22 +2,42 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QWheelEvent>
+#include <QMouseEvent> // Added for mouse events
 #include <QtMath> // Для qDegreesToRadians, qCos, qSin
 #include <QTimer>
 #include <QDebug>
+#include <QtGlobal> // Для qBound
 
 SpiralProgressIndicator::SpiralProgressIndicator(QWidget *parent)
-    : QWidget(parent), m_progressValue(0), m_maximumValue(100), m_minimumValue(0), m_targetValue(0)
+    : QWidget(parent), m_progressValue(0), m_maximumValue(100), m_minimumValue(0), m_targetValue(0),
+      m_isDragging(false), m_initialProgressValue(0) // Инициализация членов для мыши
 {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    // Устанавливаем флаг для отслеживания событий мыши без нажатия кнопки (для mouseMoveEvent)
+    setMouseTracking(true);
 
     connect(&m_animationTimer, &QTimer::timeout, this, &SpiralProgressIndicator::animateProgress);
     m_animationTimer.start(16); // ~60 FPS
 }
 
+SpiralProgressIndicator::~SpiralProgressIndicator()
+{
+    // Деструктор
+}
+
 void SpiralProgressIndicator::setProgressValue(int value)
 {
-    m_targetValue = qBound(m_minimumValue, value, m_maximumValue);
+    // Ограничиваем значение целевым диапазоном
+    int clampedValue = qBound(m_minimumValue, value, m_maximumValue);
+    if (clampedValue != m_targetValue) {
+        m_targetValue = clampedValue;
+        // Если таймер не активен, запускаем его для начала анимации
+        if (!m_animationTimer.isActive()) {
+            m_animationTimer.start(16);
+        }
+        // Испускаем сигнал сразу при изменении целевого значения
+        emit progressValueChanged(m_targetValue);
+    }
 }
 
 int SpiralProgressIndicator::progressValue() const
@@ -27,19 +47,20 @@ int SpiralProgressIndicator::progressValue() const
 
 void SpiralProgressIndicator::setMaximumValue(int value)
 {
-    m_maximumValue = value;
-    // Ensure targetValue is within new bounds
-    m_targetValue = qBound(m_minimumValue, m_targetValue, m_maximumValue);
-    // If current value is outside, animate towards target
-    if (m_progressValue < m_minimumValue || m_progressValue > m_maximumValue) {
-         m_progressValue = qBound(m_minimumValue, m_progressValue, m_maximumValue);
-         update(); // Update immediately if current value was outside bounds
-         // Start animation if needed
-         if (m_progressValue != m_targetValue && !m_animationTimer.isActive()) {
-             m_animationTimer.start(16);
-         }
-    } else {
-       update(); // Update to reflect potential change in max value influencing rendering
+    if (m_maximumValue != value) {
+        m_maximumValue = value;
+        // Убеждаемся, что целевое и текущее значения находятся в новом диапазоне
+        m_targetValue = qBound(m_minimumValue, m_targetValue, m_maximumValue);
+        m_progressValue = qBound(m_minimumValue, m_progressValue, m_maximumValue);
+        emit maximumValueChanged(m_maximumValue);
+        // Если текущее значение изменилось или не совпадает с целевым, обновляем и запускаем анимацию
+        if (m_progressValue != m_targetValue) {
+             if (!m_animationTimer.isActive()) {
+                m_animationTimer.start(16);
+            }
+        } else {
+            update(); // Обновляем только отрисовку, если значения не изменились, но диапазон поменялся
+        }
     }
 }
 
@@ -50,19 +71,20 @@ int SpiralProgressIndicator::maximumValue() const
 
 void SpiralProgressIndicator::setMinimumValue(int value)
 {
-    m_minimumValue = value;
-     // Ensure targetValue is within new bounds
-    m_targetValue = qBound(m_minimumValue, m_targetValue, m_maximumValue);
-    // If current value is outside, animate towards target
-     if (m_progressValue < m_minimumValue || m_progressValue > m_maximumValue) {
-         m_progressValue = qBound(m_minimumValue, m_progressValue, m_maximumValue);
-         update(); // Update immediately if current value was outside bounds
-         // Start animation if needed
-         if (m_progressValue != m_targetValue && !m_animationTimer.isActive()) {
-             m_animationTimer.start(16);
-         }
-    } else {
-       update(); // Update to reflect potential change in min value influencing rendering
+    if (m_minimumValue != value) {
+        m_minimumValue = value;
+        // Убеждаемся, что целевое и текущее значения находятся в новом диапазоне
+        m_targetValue = qBound(m_minimumValue, m_targetValue, m_maximumValue);
+        m_progressValue = qBound(m_minimumValue, m_progressValue, m_maximumValue);
+        emit minimumValueChanged(m_minimumValue);
+        // Если текущее значение изменилось или не совпадает с целевым, обновляем и запускаем анимацию
+        if (m_progressValue != m_targetValue) {
+            if (!m_animationTimer.isActive()) {
+                m_animationTimer.start(16);
+            }
+        } else {
+            update(); // Обновляем только отрисовку, если значения не изменились, но диапазон поменялся
+        }
     }
 }
 
@@ -82,72 +104,83 @@ void SpiralProgressIndicator::paintEvent(QPaintEvent *event)
     QRectF outerRect(0, 0, side, side);
     outerRect.moveCenter(rect().center());
 
-    double progressRatio = static_cast<double>(m_progressValue - m_minimumValue) / (m_maximumValue - m_minimumValue);
-    // Handle division by zero if min == max
-    if (m_maximumValue == m_minimumValue) {
-        progressRatio = 0.0;
-    }
-     // Ensure progressRatio is within [0, 1]
-    progressRatio = qBound(0.0, progressRatio, 1.0);
-
+    // Вычисляем центр для рисования сердца
+    QPointF center = outerRect.center();
+    // Масштабируем сердце, чтобы оно помещалось в виджет
+    double scale = side * 0.015; // Коэффициент масштабирования, можно настроить
 
     // --- Изменение цвета ---
     QPen pen;
     pen.setWidth(4); // Толщина линии
     pen.setColor(Qt::purple); // Устанавливаем сплошной фиолетовый цвет
-    // Можете раскомментировать и настроить этот блок, если хотите градиент вместо сплошного цвета
-    /*
-    QConicalGradient gradient(outerRect.center(), 0);
-    gradient.setColorAt(0.0, Qt::green); // Начало градиента - зеленый
-    gradient.setColorAt(1.0, Qt::yellow); // Конец градиента - желтый
-    pen.setBrush(gradient);
-    */
     painter.setPen(pen);
     // --- Конец изменения цвета ---
 
+    // --- Изменение формы на сердце ---
+    QPainterPath heartPath;
+    // Используем параметрическое уравнение для сердца
+    // t от 0 до 2*PI
+    // x = 16 * sin^3(t)
+    // y = 13 * cos(t) - 5 * cos(2t) - 2 * cos(3t) - cos(4t)
 
-    // --- Изменение формы ---
-    int numTurns = 5; // Количество витков
-    // Увеличиваем количество шагов на виток для плавности, используем 360 шагов на виток (1 шаг на градус)
-    double totalStepsPerTurn = 360.0;
-    double angleStep = 360.0 / totalStepsPerTurn; // Шаг угла в градусах
+    // Количество точек для отрисовки сердца
+    int numberOfHeartPoints = 360; // Достаточно точек для плавности
+    double tStep = 2.0 * M_PI / numberOfHeartPoints;
 
-    double baseRadius = side * 0.05; // Начальный радиус (5% от размера стороны)
-    // Рассчитываем, насколько должен расти радиус за каждый градус,
-    // чтобы достичь примерно половины размера виджета (radius = side / 2.0)
-    // к концу последнего витка (totalAngle = numTurns * 360.0)
-    double totalAngleForMaxRadius = numTurns * 360.0;
-    double maxRadius = side / 2.0; // Максимальный радиус спирали
-    double radiusGrowthPerDegree = (maxRadius - baseRadius) / totalAngleForMaxRadius;
+    // Вычисляем путь для полного сердца
+    QPainterPath fullHeartPath;
+    for (int i = 0; i <= numberOfHeartPoints; ++i) {
+        double t = i * tStep;
+        double x = 16.0 * qPow(qSin(t), 3);
+        double y = -(13.0 * qCos(t) - 5.0 * qCos(2 * t) - 2.0 * qCos(3 * t) - qCos(4 * t)); // Знак минус, чтобы сердце было направлено вверх
 
-
-    QPainterPath spiralPath;
-    QPointF center = outerRect.center();
-
-    // Общий угол, который должна покрыть спираль при текущем прогрессе
-    double totalAngleCovered = progressRatio * totalAngleForMaxRadius;
-    // Количество точек для рисования
-    int numberOfPoints = static_cast<int>(totalAngleCovered / angleStep);
-
-
-    for (int i = 0; i <= numberOfPoints; ++i)
-    {
-        double currentAngle = i * angleStep; // Текущий угол в градусах
-        double radius = baseRadius + currentAngle * radiusGrowthPerDegree; // Радиус растет линейно с углом
-
-        // Преобразуем полярные координаты (radius, currentAngle) в декартовы (x, y)
-        double x = center.x() + radius * qCos(qDegreesToRadians(currentAngle));
-        double y = center.y() - radius * qSin(qDegreesToRadians(currentAngle));
+        // Применяем масштабирование и смещение к центру
+        QPointF point(center.x() + x * scale, center.y() + y * scale);
 
         if (i == 0)
-            spiralPath.moveTo(x, y);
+            fullHeartPath.moveTo(point);
         else
-            spiralPath.lineTo(x, y);
+            fullHeartPath.lineTo(point);
     }
+
+    // Отрисовываем полный контур сердца (опционально, как фон)
+    QPen backgroundPen = pen;
+    backgroundPen.setColor(Qt::gray); // Цвет фона сердца
+    painter.setPen(backgroundPen);
+    painter.drawPath(fullHeartPath);
+
+    // Отрисовываем прогресс по контуру сердца
+    QPen progressPen = pen;
+    progressPen.setColor(Qt::red); // Цвет прогресса
+    painter.setPen(progressPen);
+
+    double progressRatio = static_cast<double>(m_progressValue - m_minimumValue) / (m_maximumValue - m_minimumValue);
+    // Обработка деления на ноль
+    if (m_maximumValue == m_minimumValue) {
+        progressRatio = 0.0;
+    }
+    // Ограничение progressRatio в диапазоне [0, 1]
+    progressRatio = qBound(0.0, progressRatio, 1.0);
+
+    // Количество точек для отрисовки прогресса
+    int numberOfProgressPoints = static_cast<int>(progressRatio * numberOfHeartPoints);
+
+    QPainterPath progressHeartPath;
+    for (int i = 0; i <= numberOfProgressPoints; ++i) {
+        double t = i * tStep;
+        double x = 16.0 * qPow(qSin(t), 3);
+        double y = -(13.0 * qCos(t) - 5.0 * qCos(2 * t) - 2.0 * qCos(3 * t) - qCos(4 * t));
+
+        QPointF point(center.x() + x * scale, center.y() + y * scale);
+
+        if (i == 0)
+            progressHeartPath.moveTo(point);
+        else
+            progressHeartPath.lineTo(point);
+    }
+    painter.drawPath(progressHeartPath);
+
     // --- Конец изменения формы ---
-
-
-    painter.drawPath(spiralPath);
 
     // Draw progress text
     painter.setPen(Qt::black);
@@ -172,31 +205,61 @@ void SpiralProgressIndicator::wheelEvent(QWheelEvent *event)
     }
 
     if (delta != 0) {
-        // Scale delta based on the range (max - min) to make scrolling meaningful
-        // For a default range of 0-100, delta is steps.
-        // For a larger range, each scroll tick should represent a smaller fraction of the total range.
-        double range = m_maximumValue - m_minimumValue;
-        int stepChange = 0;
-        if (range > 0) {
-             // Adjust sensitivity - a delta of 120 (standard angleDelta) might change progress by ~1-5 units
-             // Let's make pixelDelta of ~10 change progress by 1
-             stepChange = static_cast<int>(delta / 10.0);
-             // Ensure at least a change of 1 if delta is non-zero but small
-             if (stepChange == 0 && delta != 0) {
-                 stepChange = (delta > 0) ? 1 : -1;
-             }
-        } else {
-            stepChange = (delta > 0) ? 1 : -1; // If range is 0, just increment/decrement
-        }
+        // Изменяем целевое значение на основе дельты колесика
+        int newTarget = m_targetValue + delta; // Используем дельту напрямую или масштабируем при необходимости
+        setProgressValue(newTarget); // Используем setProgressValue для запуска анимации и ограничения
+        event->accept();
+    } else {
+        event->ignore();
+    }
+}
 
-        // Prevent target value from going outside bounds during animation
-        int newTarget = m_targetValue + stepChange;
-        newTarget = qBound(m_minimumValue, newTarget, m_maximumValue);
+void SpiralProgressIndicator::mousePressEvent(QMouseEvent *event)
+{
+    // Начинаем перетаскивание, если нажата левая кнопка мыши
+    if (event->button() == Qt::LeftButton) {
+        m_isDragging = true;
+        m_lastMousePos = event->pos();
+        m_initialProgressValue = m_progressValue; // Сохраняем начальное значение
+        event->accept();
+    } else {
+        event->ignore();
+    }
+}
 
-        if (newTarget != m_targetValue) {
-             m_targetValue = newTarget;
-             // Animation timer will handle the rest
-        }
+void SpiralProgressIndicator::mouseMoveEvent(QMouseEvent *event)
+{
+    // Обрабатываем движение мыши только при перетаскивании
+    if (m_isDragging) {
+        QPointF currentPos = event->pos();
+        // Вычисляем вертикальное смещение
+        double dy = currentPos.y() - m_lastMousePos.y();
+
+        // Масштабируем смещение в изменение значения прогресса
+        // Чувствительность можно настроить
+        double sensitivity = 0.5; // Настройте это значение
+        int valueChange = static_cast<int>(-dy * sensitivity); // Минус, чтобы движение вверх увеличивало значение
+
+        // Вычисляем новое целевое значение
+        int newTarget = m_targetValue + valueChange;
+
+        // Обновляем целевое значение с помощью setProgressValue
+        setProgressValue(newTarget);
+
+        // Обновляем последнюю позицию мыши для следующего шага
+        m_lastMousePos = currentPos;
+
+        event->accept();
+    } else {
+        event->ignore();
+    }
+}
+
+void SpiralProgressIndicator::mouseReleaseEvent(QMouseEvent *event)
+{
+    // Завершаем перетаскивание, если отпущена левая кнопка мыши
+    if (event->button() == Qt::LeftButton && m_isDragging) {
+        m_isDragging = false;
         event->accept();
     } else {
         event->ignore();
@@ -206,44 +269,30 @@ void SpiralProgressIndicator::wheelEvent(QWheelEvent *event)
 
 void SpiralProgressIndicator::animateProgress()
 {
-     if (m_progressValue != m_targetValue)
+    if (m_progressValue != m_targetValue)
     {
         int step = (m_targetValue > m_progressValue) ? 1 : -1;
 
-        // Simple easing: move faster when far from target, slower when close
-        int diff = qAbs(m_targetValue - m_progressValue);
-        if (diff > 10) {
-            step *= 2; // Move faster if difference is large
-        } else if (diff <= 2) {
-            step = (m_targetValue > m_progressValue) ? 1 : -1; // Move slower if difference is small
-        } else {
-            step = (m_targetValue > m_progressValue) ? 1 : -1; // Normal step
-        }
+        // Простая анимация: движемся к целевому значению
+        // Можно добавить сглаживание, но для простоты пока просто шаг
+        m_progressValue += step;
 
-        // Ensure we don't overshoot the target
-        if ((step > 0 && m_progressValue + step > m_targetValue) || (step < 0 && m_progressValue + step < m_targetValue)) {
+        // Убеждаемся, что не проскакиваем целевое значение
+        if ((step > 0 && m_progressValue > m_targetValue) || (step < 0 && m_progressValue < m_targetValue)) {
             m_progressValue = m_targetValue;
-        } else {
-            m_progressValue += step;
         }
 
+        // Испускаем сигнал при каждом шаге анимации для обновления слайдера/поля ввода
+        emit progressValueChanged(m_progressValue);
 
         update();
 
-        // Stop the timer if we've reached the target
+        // Останавливаем таймер, если достигли целевого значения
         if (m_progressValue == m_targetValue) {
             m_animationTimer.stop();
         }
     } else {
-        // Timer might still be running if target was reached in the previous step
+        // Таймер может быть активен, даже если цель достигнута на предыдущем шаге
         m_animationTimer.stop();
     }
 }
-
-// Добавьте реализацию для m_animationTimer в конструкторе или в заголовочном файле
-// qBound требует #include <QtGlobal>
-// qDegreesToRadians, qCos, qSin требуют #include <QtMath>
-// QPainterPath требует #include <QPainterPath>
-// QWheelEvent требует #include <QWheelEvent>
-// QTimer требует #include <QTimer>
-// QDebug требует #include <QDebug> (для отладки, можно убрать)
