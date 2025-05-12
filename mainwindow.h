@@ -2,11 +2,12 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QSlider>
-#include <QVBoxLayout>
-#include <QLineEdit> // Added for input field
-#include <QLabel>    // Added for input field label
-#include "spiralprogressindicator.h"
+
+class QSlider;
+class QLineEdit;
+class QLabel;
+
+#include "spiralprogressindicator.h" // Важно: Подключаем ваш виджет прогресса
 
 class MainWindow : public QMainWindow
 {
@@ -17,16 +18,14 @@ public:
     ~MainWindow();
 
 private slots:
-    // Слот для обработки завершения редактирования поля ввода
     void onInputEditingFinished();
-    // Слот для обновления поля ввода при изменении значения прогресса
     void onProgressValueChanged(int value);
 
 private:
     SpiralProgressIndicator *progressIndicator;
     QSlider *slider;
-    QLineEdit *valueInput; // Поле ввода для значения
-    QLabel *inputLabel;    // Метка для поля ввода
+    QLabel *inputLabel;
+    QLineEdit *valueInput;
 };
 
 #endif // MAINWINDOW_H
