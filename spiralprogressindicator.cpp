@@ -1,292 +1,249 @@
 #include "spiralprogressindicator.h"
-#include <QPainterPath> // Требуется для рисования сложных фигур, таких как спирали
-#include <QtMath>       // Требуется для математических функций, например qDegreesToRadians
-#include <QFontMetrics> // Требуется для расчета размера текста
-#include <QRectF>       // Для работы с прямоугольниками с плавающей точкой
-#include <QRadialGradient> // Можно использовать для градиентной заливки, если нужно (не реализовано в текущем коде)
+#include <QPainter>
+#include <QPainterPath>
+#include <QWheelEvent>
+#include <QtMath> // Для qDegreesToRadians, qCos, qSin
+#include <QTimer>
+#include <QDebug>
 
 SpiralProgressIndicator::SpiralProgressIndicator(QWidget *parent)
-    : QWidget(parent),
-      m_progressValue(0),      // Начальное значение прогресса
-      m_minimumValue(0),       // Начальный минимум
-      m_maximumValue(100),     // Начальный максимум
-      m_wheelStepSize(5)       // Шаг изменения значения колесиком мыши
+    : QWidget(parent), m_progressValue(0), m_maximumValue(100), m_minimumValue(0), m_targetValue(0)
 {
-    // Устанавливаем политику размеров, чтобы виджет мог расширяться
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    setMinimumSize(100, 100); // Устанавливаем минимальный размер, чтобы спираль была видна
 
-    // Инициализируем объект анимации
-    // Анимируем свойство "progressValue" для текущего объекта (this)
-    m_animation = new QPropertyAnimation(this, "progressValue", this);
-    m_animation->setDuration(300); // Длительность анимации в миллисекундах (меньше для быстрого отклика)
-    m_animation->setEasingCurve(QEasingCurve::OutQuad); // Кривая сглаживания анимации (можно попробовать другие)
-
-    qDebug() << "SpiralProgressIndicator создан с мин:" << m_minimumValue << "макс:" << m_maximumValue << "значение:" << m_progressValue;
+    connect(&m_animationTimer, &QTimer::timeout, this, &SpiralProgressIndicator::animateProgress);
+    m_animationTimer.start(16); // ~60 FPS
 }
 
-SpiralProgressIndicator::~SpiralProgressIndicator()
+void SpiralProgressIndicator::setProgressValue(int value)
 {
-    // Объект m_animation будет удален автоматически, так как у него установлен родитель (this)
-    // delete m_animation; // Не требуется, если установлен родитель
+    m_targetValue = qBound(m_minimumValue, value, m_maximumValue);
 }
 
-// Геттер для progressValue
 int SpiralProgressIndicator::progressValue() const
 {
     return m_progressValue;
 }
 
-// Сеттер для progressValue - запускает анимацию изменения значения
-void SpiralProgressIndicator::setProgressValue(int value)
+void SpiralProgressIndicator::setMaximumValue(int value)
 {
-    qDebug() << "setProgressValue получено:" << value << "Текущий мин:" << m_minimumValue << "макс:" << m_maximumValue << "текущее значение:" << m_progressValue;
-
-    // Ограничиваем целевое значение в пределах [minimumValue, maximumValue]
-    int targetValue = clampValue(value);
-
-    // Проверяем, изменится ли значение
-    if (m_progressValue != targetValue) {
-        qDebug() << "Анимируем от" << m_progressValue << "до" << targetValue;
-
-        // Останавливаем текущую анимацию, если она есть
-        m_animation->stop();
-        // Устанавливаем начальное значение анимации (текущее значение)
-        m_animation->setStartValue(m_progressValue);
-        // Устанавливаем конечное значение анимации (целевое значение)
-        m_animation->setEndValue(targetValue);
-
-        // Соединяем сигнал finished анимации с нашим слотом animationFinished
-        // Сначала отключаем предыдущие соединения, чтобы избежать дублирования вызовов
-        disconnect(m_animation, &QPropertyAnimation::finished, this, &SpiralProgressIndicator::animationFinished);
-        connect(m_animation, &QPropertyAnimation::finished, this, &SpiralProgressIndicator::animationFinished);
-
-        // Запускаем анимацию
-        m_animation->start();
+    m_maximumValue = value;
+    // Ensure targetValue is within new bounds
+    m_targetValue = qBound(m_minimumValue, m_targetValue, m_maximumValue);
+    // If current value is outside, animate towards target
+    if (m_progressValue < m_minimumValue || m_progressValue > m_maximumValue) {
+         m_progressValue = qBound(m_minimumValue, m_progressValue, m_maximumValue);
+         update(); // Update immediately if current value was outside bounds
+         // Start animation if needed
+         if (m_progressValue != m_targetValue && !m_animationTimer.isActive()) {
+             m_animationTimer.start(16);
+         }
     } else {
-        qDebug() << "Значение не изменилось, анимация не требуется.";
+       update(); // Update to reflect potential change in max value influencing rendering
     }
 }
 
-// Слот, вызываемый по завершении анимации
-void SpiralProgressIndicator::animationFinished()
-{
-    // Анимация сама обновляет свойство "progressValue" по мере выполнения,
-    // вызывая setProgressValue с промежуточными значениями.
-    // Этот слот вызывается только по окончании анимации.
-    // Мы явно устанавливаем конечное значение и испускаем сигнал, чтобы гарантировать
-    // точное конечное состояние и уведомить связанные объекты (например, слайдер).
-    m_progressValue = m_animation->endValue().toInt();
-    qDebug() << "Анимация завершена. Конечное значение:" << m_progressValue;
-    emit progressValueChanged(m_progressValue); // Испускаем сигнал с конечным значением
-    update(); // Запрашиваем финальную перерисовку
-}
-
-// Геттер для minimumValue
-int SpiralProgressIndicator::minimumValue() const
-{
-    return m_minimumValue;
-}
-
-// Сеттер для minimumValue
-void SpiralProgressIndicator::setMinimumValue(int value)
-{
-    qDebug() << "setMinimumValue получено:" << value;
-    if (m_minimumValue != value) {
-        m_minimumValue = value;
-        qDebug() << "Минимальное значение изменено на:" << m_minimumValue;
-        // Убеждаемся, что текущее и максимальное значения находятся в новом диапазоне
-        if (m_progressValue < m_minimumValue) {
-            // Прямо устанавливаем progressValue без анимации при изменении диапазона
-            m_progressValue = m_minimumValue;
-            qDebug() << "progressValue скорректировано до минимума:" << m_progressValue;
-            emit progressValueChanged(m_progressValue); // Испускаем сигнал вручную
-        }
-        if (m_maximumValue < m_minimumValue) {
-            m_maximumValue = m_minimumValue;
-             qDebug() << "maximumValue скорректировано до минимума:" << m_maximumValue;
-            emit maximumValueChanged(m_maximumValue); // Испускаем сигнал вручную
-        }
-        emit minimumValueChanged(m_minimumValue); // Испускаем сигнал об изменении минимума
-        update(); // Запрашиваем перерисовку
-    } else {
-        qDebug() << "Минимальное значение не изменилось.";
-    }
-}
-
-// Геттер для maximumValue
 int SpiralProgressIndicator::maximumValue() const
 {
     return m_maximumValue;
 }
 
-// Сеттер для maximumValue
-void SpiralProgressIndicator::setMaximumValue(int value)
+void SpiralProgressIndicator::setMinimumValue(int value)
 {
-    qDebug() << "setMaximumValue получено:" << value;
-    if (m_maximumValue != value) {
-        m_maximumValue = value;
-        qDebug() << "Максимальное значение изменено на:" << m_maximumValue;
-         // Убеждаемся, что текущее и минимальное значения находятся в новом диапазоне
-        if (m_progressValue > m_maximumValue) {
-             // Прямо устанавливаем progressValue без анимации при изменении диапазона
-            m_progressValue = m_maximumValue;
-            qDebug() << "progressValue скорректировано до максимума:" << m_progressValue;
-            emit progressValueChanged(m_progressValue); // Испускаем сигнал вручную
-        }
-        if (m_minimumValue > m_maximumValue) {
-            m_minimumValue = m_maximumValue;
-             qDebug() << "minimumValue скорректировано до максимума:" << m_minimumValue;
-            emit minimumValueChanged(m_minimumValue); // Испускаем сигнал вручную
-        }
-        emit maximumValueChanged(m_maximumValue); // Испускаем сигнал об изменении максимума
-        update(); // Запрашиваем перерисовку
+    m_minimumValue = value;
+     // Ensure targetValue is within new bounds
+    m_targetValue = qBound(m_minimumValue, m_targetValue, m_maximumValue);
+    // If current value is outside, animate towards target
+     if (m_progressValue < m_minimumValue || m_progressValue > m_maximumValue) {
+         m_progressValue = qBound(m_minimumValue, m_progressValue, m_maximumValue);
+         update(); // Update immediately if current value was outside bounds
+         // Start animation if needed
+         if (m_progressValue != m_targetValue && !m_animationTimer.isActive()) {
+             m_animationTimer.start(16);
+         }
     } else {
-         qDebug() << "Максимальное значение не изменилось.";
+       update(); // Update to reflect potential change in min value influencing rendering
     }
 }
 
-// Геттер для wheelStepSize
-int SpiralProgressIndicator::wheelStepSize() const
+int SpiralProgressIndicator::minimumValue() const
 {
-    return m_wheelStepSize;
+    return m_minimumValue;
 }
 
-// Сеттер для wheelStepSize
-void SpiralProgressIndicator::setWheelStepSize(int size)
-{
-    if (m_wheelStepSize != size) {
-        m_wheelStepSize = size;
-        qDebug() << "Шаг колесика изменен на:" << m_wheelStepSize;
-        emit wheelStepSizeChanged(m_wheelStepSize); // Испускаем сигнал об изменении шага колесика
-    }
-}
-
-// Вспомогательная функция для ограничения значения
-int SpiralProgressIndicator::clampValue(int value) const
-{
-    // qBound возвращает значение, ограниченное между lower и upper
-    int clamped = qBound(m_minimumValue, value, m_maximumValue);
-    qDebug() << "Ограничиваем" << value << "между" << m_minimumValue << "и" << m_maximumValue << "Результат:" << clamped;
-    return clamped;
-}
-
-// Обработчик события перерисовки виджета
 void SpiralProgressIndicator::paintEvent(QPaintEvent *event)
 {
-    Q_UNUSED(event); // Этот аргумент не используется, помечаем его как неиспользуемый
+    Q_UNUSED(event);
 
     QPainter painter(this);
-    // Включаем сглаживание для более плавных линий
     painter.setRenderHint(QPainter::Antialiasing);
-    // QPainter::HighQualityAntialiasing устарел, используем Antialiasing
 
-    // Вычисляем размер квадратной области для спирали
     int side = qMin(width(), height());
-    // Вычисляем центр виджета
-    QPointF center = rect().center();
+    QRectF outerRect(0, 0, side, side);
+    outerRect.moveCenter(rect().center());
 
-    // Определяем параметры для спирали (можно настраивать)
-    qreal startRadius = side * 0.1; // Начальный радиус спирали (относительно размера виджета)
-    qreal endRadius = side * 0.4;  // Конечный радиус спирали (около половины стороны)
-    int numTurns = 5;              // Количество витков спирали
-    qreal angleStep = 1.0;         // Шаг угла для отрисовки (меньше -> плавнее, но медленнее)
-
-    // Вычисляем общий угол, покрываемый всей спиралью
-    qreal totalAngle = numTurns * 360.0;
-
-    // Вычисляем текущий угол в зависимости от прогресса
-    qreal progressRatio = 0.0;
-    if (m_maximumValue > m_minimumValue) {
-        progressRatio = static_cast<qreal>(m_progressValue - m_minimumValue) / (m_maximumValue - m_minimumValue);
+    double progressRatio = static_cast<double>(m_progressValue - m_minimumValue) / (m_maximumValue - m_minimumValue);
+    // Handle division by zero if min == max
+    if (m_maximumValue == m_minimumValue) {
+        progressRatio = 0.0;
     }
-    // Убеждаемся, что progressRatio находится в пределах [0, 1]
+     // Ensure progressRatio is within [0, 1]
     progressRatio = qBound(0.0, progressRatio, 1.0);
 
-    qreal currentAngle = progressRatio * totalAngle;
 
-    // Создаем путь для всей спирали (фон)
-    QPainterPath fullSpiralPath;
-    // Начинаем спираль справа от центра (угол 0)
-    fullSpiralPath.moveTo(center.x() + startRadius, center.y());
+    // --- Изменение цвета ---
+    QPen pen;
+    pen.setWidth(4); // Толщина линии
+    pen.setColor(Qt::purple); // Устанавливаем сплошной фиолетовый цвет
+    // Можете раскомментировать и настроить этот блок, если хотите градиент вместо сплошного цвета
+    /*
+    QConicalGradient gradient(outerRect.center(), 0);
+    gradient.setColorAt(0.0, Qt::green); // Начало градиента - зеленый
+    gradient.setColorAt(1.0, Qt::yellow); // Конец градиента - желтый
+    pen.setBrush(gradient);
+    */
+    painter.setPen(pen);
+    // --- Конец изменения цвета ---
 
-    // Строим полную спираль по точкам
-    for (qreal angle = 0; angle <= totalAngle; angle += angleStep) {
-        // Вычисляем текущий радиус (линейно увеличивается от startRadius до endRadius)
-        qreal currentRadius = startRadius + (endRadius - startRadius) * (angle / totalAngle);
 
-        // Преобразуем полярные координаты (радиус, угол) в декартовы (x, y)
-        // Угол должен быть в радианах для тригонометрических функций
-        qreal x = center.x() + currentRadius * qCos(qDegreesToRadians(angle));
-        qreal y = center.y() + currentRadius * qSin(qDegreesToRadians(angle));
+    // --- Изменение формы ---
+    int numTurns = 5; // Количество витков
+    // Увеличиваем количество шагов на виток для плавности, используем 360 шагов на виток (1 шаг на градус)
+    double totalStepsPerTurn = 360.0;
+    double angleStep = 360.0 / totalStepsPerTurn; // Шаг угла в градусах
 
-        fullSpiralPath.lineTo(x, y);
+    double baseRadius = side * 0.05; // Начальный радиус (5% от размера стороны)
+    // Рассчитываем, насколько должен расти радиус за каждый градус,
+    // чтобы достичь примерно половины размера виджета (radius = side / 2.0)
+    // к концу последнего витка (totalAngle = numTurns * 360.0)
+    double totalAngleForMaxRadius = numTurns * 360.0;
+    double maxRadius = side / 2.0; // Максимальный радиус спирали
+    double radiusGrowthPerDegree = (maxRadius - baseRadius) / totalAngleForMaxRadius;
+
+
+    QPainterPath spiralPath;
+    QPointF center = outerRect.center();
+
+    // Общий угол, который должна покрыть спираль при текущем прогрессе
+    double totalAngleCovered = progressRatio * totalAngleForMaxRadius;
+    // Количество точек для рисования
+    int numberOfPoints = static_cast<int>(totalAngleCovered / angleStep);
+
+
+    for (int i = 0; i <= numberOfPoints; ++i)
+    {
+        double currentAngle = i * angleStep; // Текущий угол в градусах
+        double radius = baseRadius + currentAngle * radiusGrowthPerDegree; // Радиус растет линейно с углом
+
+        // Преобразуем полярные координаты (radius, currentAngle) в декартовы (x, y)
+        double x = center.x() + radius * qCos(qDegreesToRadians(currentAngle));
+        double y = center.y() - radius * qSin(qDegreesToRadians(currentAngle));
+
+        if (i == 0)
+            spiralPath.moveTo(x, y);
+        else
+            spiralPath.lineTo(x, y);
     }
+    // --- Конец изменения формы ---
 
-    // Создаем путь для части спирали, показывающей прогресс
-    QPainterPath progressSpiralPath;
-     if (currentAngle > 0) {
-        // Начинаем прогресс спираль также справа от центра
-        progressSpiralPath.moveTo(center.x() + startRadius, center.y());
 
-        // Строим прогресс спираль до текущего угла
-        for (qreal angle = 0; angle <= currentAngle; angle += angleStep) {
-            qreal currentRadius = startRadius + (endRadius - startRadius) * (angle / totalAngle);
-            qreal x = center.x() + currentRadius * qCos(qDegreesToRadians(angle));
-            qreal y = center.y() + currentRadius * qSin(qDegreesToRadians(angle));
-            progressSpiralPath.lineTo(x, y);
-        }
-     }
+    painter.drawPath(spiralPath);
 
-    // Рисуем путь полной спирали (фон)
-    // Толщина линии относительно размера виджета, скругленные концы и соединения
-    painter.setPen(QPen(Qt::gray, side * 0.02, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    painter.drawPath(fullSpiralPath);
-
-    // Рисуем путь прогресс спирали (передний план)
-    painter.setPen(QPen(Qt::blue, side * 0.02, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    painter.drawPath(progressSpiralPath);
-
-    // Рисуем текст текущего прогресса в центре
-    painter.setPen(Qt::black); // Цвет текста
+    // Draw progress text
+    painter.setPen(Qt::black);
     QFont font = painter.font();
-    int fontSize = static_cast<int>(side * 0.1); // Размер шрифта относительно размера виджета
+    // Adjust font size based on widget size, but cap it to avoid excessively large text
+    int fontSize = static_cast<int>(side * 0.1);
+    if (fontSize < 10) fontSize = 10; // Minimum font size
+    if (fontSize > 50) fontSize = 50; // Maximum font size
     font.setPointSize(fontSize);
     painter.setFont(font);
 
-    // Форматируем текст прогресса (например, "50%")
-    // progressRatio * 100 - процентное значение
-    // 0 - минимальная ширина поля (без выравнивания по ширине)
-    // 'f' - формат с плавающей точкой
-    // 0 - количество знаков после запятой (отображаем как целое число)
-    QString progressText = QString("%1%").arg(progressRatio * 100, 0, 'f', 0);
-
-    // Вычисляем прямоугольник для текста для центрирования
-    QFontMetrics fm(font);
-    // BoundingRect возвращает размер прямоугольника, который занимает текст
-    QRect textRect = fm.boundingRect(progressText);
-    // Перемещаем центр текстового прямоугольника в центр виджета
-    textRect.moveCenter(center.toPoint());
-
-    // Рисуем текст по центру
-    painter.drawText(textRect, Qt::AlignCenter, progressText);
+    QString progressText = QString("%1%").arg(progressRatio * 100, 0, 'f', (progressRatio == 0.0 || progressRatio == 1.0) ? 0 : 1); // Show 1 decimal place unless 0 or 100
+    painter.drawText(outerRect, Qt::AlignCenter, progressText);
 }
 
-// Обработчик события вращения колесика мыши
 void SpiralProgressIndicator::wheelEvent(QWheelEvent *event)
 {
-    // Вычисляем изменение значения на основе дельты колесика
-    // Стандартная дельта колесика - 120 на один "щелчок"
-    int delta = event->angleDelta().y() / 120;
-    // Вычисляем новое целевое значение с учетом шага колесика
-    int newValue = m_progressValue + delta * m_wheelStepSize;
+    // Use pixelDelta for smoother scrolling if available, fallback to angleDelta
+    int delta = event->pixelDelta().y();
+    if (delta == 0) {
+        delta = event->angleDelta().y() / 8; // Adjust sensitivity for angleDelta
+    }
 
-    qDebug() << "Событие колесика, дельта:" << delta << "шаг колесика:" << m_wheelStepSize << "Вычислено новое значение:" << newValue;
+    if (delta != 0) {
+        // Scale delta based on the range (max - min) to make scrolling meaningful
+        // For a default range of 0-100, delta is steps.
+        // For a larger range, each scroll tick should represent a smaller fraction of the total range.
+        double range = m_maximumValue - m_minimumValue;
+        int stepChange = 0;
+        if (range > 0) {
+             // Adjust sensitivity - a delta of 120 (standard angleDelta) might change progress by ~1-5 units
+             // Let's make pixelDelta of ~10 change progress by 1
+             stepChange = static_cast<int>(delta / 10.0);
+             // Ensure at least a change of 1 if delta is non-zero but small
+             if (stepChange == 0 && delta != 0) {
+                 stepChange = (delta > 0) ? 1 : -1;
+             }
+        } else {
+            stepChange = (delta > 0) ? 1 : -1; // If range is 0, just increment/decrement
+        }
 
-    // Устанавливаем новое значение. Это вызовет сеттер setProgressValue,
-    // который запустит анимацию.
-    setProgressValue(newValue);
+        // Prevent target value from going outside bounds during animation
+        int newTarget = m_targetValue + stepChange;
+        newTarget = qBound(m_minimumValue, newTarget, m_maximumValue);
 
-    // Принимаем событие, чтобы оно не обрабатывалось далее родительскими виджетами
-    event->accept();
+        if (newTarget != m_targetValue) {
+             m_targetValue = newTarget;
+             // Animation timer will handle the rest
+        }
+        event->accept();
+    } else {
+        event->ignore();
+    }
 }
+
+
+void SpiralProgressIndicator::animateProgress()
+{
+     if (m_progressValue != m_targetValue)
+    {
+        int step = (m_targetValue > m_progressValue) ? 1 : -1;
+
+        // Simple easing: move faster when far from target, slower when close
+        int diff = qAbs(m_targetValue - m_progressValue);
+        if (diff > 10) {
+            step *= 2; // Move faster if difference is large
+        } else if (diff <= 2) {
+            step = (m_targetValue > m_progressValue) ? 1 : -1; // Move slower if difference is small
+        } else {
+            step = (m_targetValue > m_progressValue) ? 1 : -1; // Normal step
+        }
+
+        // Ensure we don't overshoot the target
+        if ((step > 0 && m_progressValue + step > m_targetValue) || (step < 0 && m_progressValue + step < m_targetValue)) {
+            m_progressValue = m_targetValue;
+        } else {
+            m_progressValue += step;
+        }
+
+
+        update();
+
+        // Stop the timer if we've reached the target
+        if (m_progressValue == m_targetValue) {
+            m_animationTimer.stop();
+        }
+    } else {
+        // Timer might still be running if target was reached in the previous step
+        m_animationTimer.stop();
+    }
+}
+
+// Добавьте реализацию для m_animationTimer в конструкторе или в заголовочном файле
+// qBound требует #include <QtGlobal>
+// qDegreesToRadians, qCos, qSin требуют #include <QtMath>
+// QPainterPath требует #include <QPainterPath>
+// QWheelEvent требует #include <QWheelEvent>
+// QTimer требует #include <QTimer>
+// QDebug требует #include <QDebug> (для отладки, можно убрать)
