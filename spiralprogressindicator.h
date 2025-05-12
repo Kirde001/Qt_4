@@ -5,70 +5,66 @@
 #include <QPainter>
 #include <QWheelEvent>
 #include <QPropertyAnimation> // Required for animation
-#include <QEasingCurve>     // Required for animation easing
+#include <QEasingCurve>       // Required for animation easing
 
 class SpiralProgressIndicator : public QWidget
 {
     Q_OBJECT
 
-    // Define progressValue as a Q_PROPERTY for animation
-    Q_PROPERTY(int progressValue READ progressValue WRITE setProgressValue NOTIFY progressValueChanged)
-    // Define min/max as Q_PROPERTY as well, though not strictly needed for animation
+    // Определяем progressValue как Q_PROPERTY.
+    // WRITE будет функцией, которая ОБНОВЛЯЕТ внутреннее значение и перерисовывает виджет.
+    Q_PROPERTY(int progressValue READ progressValue WRITE updateProgressValueAndRepaint NOTIFY progressValueChanged)
     Q_PROPERTY(int minimumValue READ minimumValue WRITE setMinimumValue NOTIFY minimumValueChanged)
     Q_PROPERTY(int maximumValue READ maximumValue WRITE setMaximumValue NOTIFY maximumValueChanged)
-    // Add a property for wheel step size
     Q_PROPERTY(int wheelStepSize READ wheelStepSize WRITE setWheelStepSize NOTIFY wheelStepSizeChanged)
-
 
 public:
     explicit SpiralProgressIndicator(QWidget *parent = nullptr);
-    ~SpiralProgressIndicator(); // Destructor to clean up animation
+    ~SpiralProgressIndicator() override = default; // Можно использовать default
 
-    // Getters for properties
+    // Getters
     int progressValue() const;
     int minimumValue() const;
     int maximumValue() const;
-    int wheelStepSize() const; // Getter for wheelStepSize
+    int wheelStepSize() const;
 
 signals:
-    // Signal emitted when progressValue changes
     void progressValueChanged(int value);
-    // Signals for min/max changes (optional but good practice)
     void minimumValueChanged(int value);
     void maximumValueChanged(int value);
-    // Signal for wheelStepSize changes
     void wheelStepSizeChanged(int size);
 
 public slots:
-    // Setter for progressValue - will trigger animation
-    void setProgressValue(int value);
-    // Setters for min/max
+    // Слот для ЗАПУСКА анимации к новому значению (вызывается извне)
+    void setProgressValueAnimated(int value);
+
+    // Сеттеры для min/max/step
     void setMinimumValue(int value);
     void setMaximumValue(int value);
-    void setWheelStepSize(int size); // Setter for wheelStepSize
+    void setWheelStepSize(int size);
 
-
-private slots: // Declare animationFinished as a private slot
+private slots:
+    // Слот, вызываемый по завершении анимации
     void animationFinished();
 
+    // Сеттер для Q_PROPERTY 'progressValue' (вызывается анимацией)
+    void updateProgressValueAndRepaint(int value);
 
 protected:
-    // Override paintEvent for custom drawing
     void paintEvent(QPaintEvent *event) override;
-    // Override wheelEvent for mouse wheel interaction
     void wheelEvent(QWheelEvent *event) override;
 
 private:
-    // Private members for property values
+    // Приватные члены для хранения значений
     int m_progressValue;
     int m_minimumValue;
     int m_maximumValue;
-    int m_wheelStepSize; // Member for wheel step size
+    int m_wheelStepSize;
 
-    // Animation object
+    // Объект анимации
     QPropertyAnimation *m_animation;
 
-    // Helper function to clamp value within min/max range
+    // Вспомогательная функция для ограничения значения
     int clampValue(int value) const;
 };
 
